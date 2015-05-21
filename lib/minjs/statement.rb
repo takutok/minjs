@@ -146,10 +146,15 @@ module Minjs
     #
     def empty_statement(lex, context)
       lex.eval_lit{
-        a = lex.fwd_lit(:nolt => true)
+        a = lex.fwd_lit
         if a == ECMA262::PUNC_SEMICOLON
           ECMA262::StEmpty.new
-        elsif a == ECMA262::LIT_LINE_FEED
+        else
+          nil
+        end
+      } || lex.eval_lit {
+        a = lex.fwd_lit(:nolt => true)
+        if a == ECMA262::LIT_LINE_FEED
           ECMA262::StEmpty.new
         elsif a.lt?
           ECMA262::StEmpty.new

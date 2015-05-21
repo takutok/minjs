@@ -53,6 +53,9 @@ module Minjs
       @logger.info '* parse'
       parse(data)
 
+      if options[:"only-parse"]
+        return
+      end
       @logger.info '* reorder_function_decl'
       reorder_function_decl
 
@@ -700,55 +703,62 @@ module Minjs
     end
 
     def simple_replacement(node = @prog)
-      node.traverse(nil) {|st, parent|
-        #
-        #true => !0
-        #false => !1
-        #
-        if st.kind_of? ECMA262::Boolean
-          if st.true?
-            parent.replace(st, ECMA262::ExpParen.new(ECMA262::ExpLogicalNot.new(ECMA262::ECMA262Numeric.new(0))))
-          else
-            parent.replace(st, ECMA262::ExpParen.new(ECMA262::ExpLogicalNot.new(ECMA262::ECMA262Numeric.new(1))))
-          end
-        #
-        #if(true){<then>}else{<else>} => then
-        #
-        elsif st.kind_of? ECMA262::StIf
-          #if(a)z;else;
-          #if(a)z;else{}
-          # => {if(a)z;}
-          if st.else_st and st.else_st.empty?
-            st.replace(st.else_st, nil)
-            parent.replace(st, ECMA262::StBlock.new([st]))
-          end
-          #if(a);
-          # => a
-          #if(a){}
-          # => a
-          if st.then_st.empty? and st.else_st.nil?
-            parent.replace(st, ECMA262::StExp.new(st.cond))
-          elsif st.cond.respond_to? :to_ecma262_boolean
-            if st.cond.to_ecma262_boolean
-              parent.replace(st, st.then_st)
-            elsif st.else_st
-              parent.replace(st, st.else_st)
+      retry_flag = true
+      while(retry_flag)
+        retry_flag = false
+        node.traverse(nil) {|st, parent|
+          #
+          #true => !0
+          #false => !1
+          #
+          if st.kind_of? ECMA262::Boolean
+            if st.true?
+              parent.replace(st, ECMA262::ExpParen.new(ECMA262::ExpLogicalNot.new(ECMA262::ECMA262Numeric.new(0))))
             else
-              parent.replace(st, ECMA262::StEmpty.new())
+              parent.replace(st, ECMA262::ExpParen.new(ECMA262::ExpLogicalNot.new(ECMA262::ECMA262Numeric.new(1))))
+            end
+          #
+          #if(true){<then>}else{<else>} => then
+          #
+          elsif st.kind_of? ECMA262::StIf
+            #if(a)z;else;
+            #if(a)z;else{}
+            # => {if(a)z;}
+            if st.else_st and st.else_st.empty?
+              st.replace(st.else_st, nil)
+              parent.replace(st, t = ECMA262::StBlock.new([st]))
+              retry_flag = true
+            end
+
+            #if(a);
+            # => a
+            #if(a){}
+            # => a
+            if st.then_st.empty? and st.else_st.nil?
+              parent.replace(st, ECMA262::StExp.new(st.cond))
+            elsif st.cond.respond_to? :to_ecma262_boolean
+              if st.cond.to_ecma262_boolean
+                parent.replace(st, st.then_st)
+              elsif st.else_st
+                parent.replace(st, st.else_st)
+              else
+                parent.replace(st, ECMA262::StEmpty.new())
+              end
+            end
+          #
+          # while(true) => for(;;)
+          # while(false) => remove
+          #
+          elsif st.kind_of? ECMA262::StWhile and st.exp.respond_to? :to_ecma262_boolean
+            if st.exp.to_ecma262_boolean
+              parent.replace(st, ECMA262::StFor.new(nil,nil,nil, st.statement))
+            else
+              parent.replace(st, ECMA262::StEmpty.new)
             end
           end
-        #
-        # while(true) => for(;;)
-        # while(false) => remove
-        #
-        elsif st.kind_of? ECMA262::StWhile and st.exp.respond_to? :to_ecma262_boolean
-          if st.exp.to_ecma262_boolean
-            parent.replace(st, ECMA262::StFor.new(nil,nil,nil, st.statement))
-          else
-            parent.replace(st, ECMA262::StEmpty.new)
-          end
-        end
-      }
+        }
+        block_to_statement if retry_flag
+      end
       self
     end
 
@@ -858,10 +868,15 @@ end
 if $0 == __FILE__
   argv = ARGV.dup
   f = []
+  options = {}
   argv.each do |x|
-    f.push(open(x.to_s).read())
+    if x.match(/^--?/)
+      options[$'.to_sym] = true
+    else
+      f.push(open(x.to_s).read())
+    end
   end
   comp = Minjs::Compressor.new(:debug => false)
-  comp.compress(f.join("\n"))
-  puts comp.to_js({})
+  comp.compress(f.join("\n"), options)
+  puts comp.to_js(options)
 end

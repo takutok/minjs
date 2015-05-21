@@ -23,11 +23,18 @@ if(a);
 if(b){}
 if(c);else;
 if(d){}else{}
-//if(e)aa;else;
-//if(f)bb;else{}
+if(e)aa;else;
+if(f)bb;else{}
+if(g)
+  if(h)
+    hh;
+  else
+    ;
+else
+  gg;
 EOS
       js = c.simple_replacement.to_js
-      expect(js).to eq "a;b;{if(c);}{if(d){}}"
+      expect(js).to eq "a;b;c;d;if(e)aa;if(f)bb;if(g){if(h)hh}else gg;"
     end
   end
 end
