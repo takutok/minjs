@@ -56,11 +56,16 @@ module Minjs
       if options[:"only-parse"]
         return
       end
-      @logger.info '* reorder_function_decl'
-      reorder_function_decl
 
-      @logger.info '* simple_replacement'
-      simple_replacement
+      if options.empty? || options[:"reorder-function-decl"]
+        @logger.info '* reorder_function_decl'
+        reorder_function_decl
+      end
+
+      if options.empty? || options[:"simple-replacement"]
+        @logger.info '* simple_replacement'
+        simple_replacement
+      end
 
       @logger.info '* reorder_var'
       reorder_var
@@ -703,89 +708,97 @@ module Minjs
     end
 
     def simple_replacement(node = @prog)
-      retry_flag = true
-      while(retry_flag)
-        retry_flag = false
-        node.traverse(nil) {|st, parent|
-          #
-          #true => !0
-          #false => !1
-          #
-          if st.kind_of? ECMA262::Boolean
-            if st.true?
-              parent.replace(st, ECMA262::ExpParen.new(ECMA262::ExpLogicalNot.new(ECMA262::ECMA262Numeric.new(0))))
+      retry_flag = false
+      node.traverse(nil) {|st, parent|
+        #
+        #true => !0
+        #false => !1
+        #
+        if st.kind_of? ECMA262::Boolean
+          if st.true?
+            parent.replace(st, ECMA262::ExpParen.new(ECMA262::ExpLogicalNot.new(ECMA262::ECMA262Numeric.new(0))))
+          else
+            parent.replace(st, ECMA262::ExpParen.new(ECMA262::ExpLogicalNot.new(ECMA262::ECMA262Numeric.new(1))))
+          end
+        #
+        #if(true){<then>}else{<else>} => then
+        #
+        elsif st.kind_of? ECMA262::StIf
+          if st.cond.respond_to? :to_ecma262_boolean
+            if st.cond.to_ecma262_boolean
+              parent.replace(st, st.then_st)
+            elsif st.else_st
+              parent.replace(st, st.else_st)
             else
-              parent.replace(st, ECMA262::ExpParen.new(ECMA262::ExpLogicalNot.new(ECMA262::ECMA262Numeric.new(1))))
-            end
-          #
-          #if(true){<then>}else{<else>} => then
-          #
-          elsif st.kind_of? ECMA262::StIf
-            #if(a)z;else;
-            #if(a)z;else{}
-            # => {if(a)z;}
-            if st.else_st and st.else_st.empty?
-              st.replace(st.else_st, nil)
-              parent.replace(st, t = ECMA262::StBlock.new([st]))
-              retry_flag = true
-            end
-
-            #if(a);
-            # => a
-            #if(a){}
-            # => a
-            if st.then_st.empty? and st.else_st.nil?
-              parent.replace(st, ECMA262::StExp.new(st.cond))
-            elsif st.cond.respond_to? :to_ecma262_boolean
-              if st.cond.to_ecma262_boolean
-                parent.replace(st, st.then_st)
-              elsif st.else_st
-                parent.replace(st, st.else_st)
-              else
-                parent.replace(st, ECMA262::StEmpty.new())
-              end
-            end
-          #
-          # while(true) => for(;;)
-          # while(false) => remove
-          #
-          elsif st.kind_of? ECMA262::StWhile and st.exp.respond_to? :to_ecma262_boolean
-            if st.exp.to_ecma262_boolean
-              parent.replace(st, ECMA262::StFor.new(nil,nil,nil, st.statement))
-            else
-              parent.replace(st, ECMA262::StEmpty.new)
+              parent.replace(st, ECMA262::StEmpty.new())
             end
           end
-        }
-        block_to_statement if retry_flag
-      end
+        #
+        # while(true) => for(;;)
+        # while(false) => remove
+        #
+        elsif st.kind_of? ECMA262::StWhile and st.exp.respond_to? :to_ecma262_boolean
+          if st.exp.to_ecma262_boolean
+            parent.replace(st, ECMA262::StFor.new(nil,nil,nil, st.statement))
+          else
+            parent.replace(st, ECMA262::StEmpty.new)
+          end
+        end
+      }
       self
     end
 
     #
     # reduce_if
     #
-    # 1) rewrite nested "if" statemet such as:
-    # if(a)
-    #   if(b) ...;
-    #
-    # to:
-    #
-    # if(a && b) ...;
-    #
-    # NOTE:
-    # both if must not have "else" clause
-    #
     def reduce_if(node = @prog)
-      node.traverse(nil) {|st, parent|
-        if st.kind_of? ECMA262::StIf
-          if st.else_st.nil? and
-            st.then_st.kind_of? ECMA262::StIf and st.then_st.else_st.nil?
-            st.replace(st.cond, ECMA262::ExpLogicalAnd.new(st.cond, st.then_st.cond))
-            st.replace(st.then_st, st.then_st.then_st)
+      retry_flag = true
+      while(retry_flag)
+        retry_flag = false
+        node.traverse(nil) {|st, parent|
+          if st.kind_of? ECMA262::StIf
+            # if(a)
+            #   if(b) ...;
+            # if(a && b) ...;
+            #
+            if st.else_st.nil? and
+              st.then_st.kind_of? ECMA262::StIf and st.then_st.else_st.nil?
+              st.replace(st.cond, ECMA262::ExpLogicalAnd.new(st.cond, st.then_st.cond))
+              st.replace(st.then_st, st.then_st.then_st)
+            end
+            #if(a);
+            # => a
+            #if(a){}
+            # => a
+            if st.then_st.empty? and st.else_st.nil?
+              parent.replace(st, ECMA262::StExp.new(st.cond))
+              retry_flag = true
+            end
+            #if(a)z;else;
+            #if(a)z;else{}
+            # => {if(a)z;}
+            if st.else_st and st.else_st.empty?
+              st.replace(st.else_st, nil)
+              parent.replace(st, ECMA262::StBlock.new([st]))
+              retry_flag = true
+            end
+
+            #if(a);else z;
+            #=>if(!a)z;
+            #if(a){}else z;
+            #=>if(!a)z;
+            if st.then_st.empty? and st.else_st
+              st.replace(st.cond, ECMA262::ExpLogicalNot.new(st.cond));
+              else_st = st.else_st
+              st.replace(st.else_st, nil)
+              st.replace(st.then_st, else_st)
+              parent.replace(st, ECMA262::StBlock.new([st]))
+              retry_flag = true
+            end
           end
-        end
-      }
+        }
+        block_to_statement if retry_flag
+      end
       self
     end
 
