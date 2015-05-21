@@ -152,16 +152,16 @@ module Minjs
         else
           nil
         end
-      } || lex.eval_lit {
-        a = lex.fwd_lit(:nolt => true)
-        if a == ECMA262::LIT_LINE_FEED
-          ECMA262::StEmpty.new
-        elsif a.lt?
-          ECMA262::StEmpty.new
-        else
-          nil
-        end
-      }
+      }# || lex.eval_lit {
+#        a = lex.fwd_lit(:nolt => true)
+#        if a == ECMA262::LIT_LINE_FEED
+#          ECMA262::StEmpty.new
+#        elsif a.lt?
+#          ECMA262::StEmpty.new
+#        else
+#          nil
+#        end
+#      }
     end
     #
     #12.4

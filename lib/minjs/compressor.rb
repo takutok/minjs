@@ -53,57 +53,34 @@ module Minjs
       @logger.info '* parse'
       parse(data)
 
-      if options[:"only-parse"]
+      if options[:only_parse]
         return
       end
 
-      if options.empty? || options[:"reorder-function-decl"]
-        @logger.info '* reorder_function_decl'
-        reorder_function_decl
+      algo = [
+        :reorder_function_decl,
+        :simple_replacement,
+        :reorder_var,
+        :assignment_after_var,
+        :grouping_statement,
+        :reduce_if,
+        :block_to_statement,
+        :if_to_cond,
+        :optimize_if_return,
+        :compress_var,
+        :reduce_exp,
+        :grouping_statement,
+        :block_to_statement,
+        :if_to_cond,
+        :optimize_if_return2,
+        :remove_paren,
+      ]
+      algo.each do |a|
+        if (options.empty? || options[:all] || options[a]) && !options[("no_" + a.to_s).to_sym]
+          @logger.info "* #{a}"
+          __send__(a, @prog)
+        end
       end
-
-      if options.empty? || options[:"simple-replacement"]
-        @logger.info '* simple_replacement'
-        simple_replacement
-      end
-
-      @logger.info '* reorder_var'
-      reorder_var
-
-      @logger.info '* assignment_after_var'
-      assignment_after_var
-
-      @logger.info '* grouping_statement'
-      grouping_statement
-
-      @logger.info '* reduce_if'
-      reduce_if
-
-      @logger.info '* block_to_statement'
-      block_to_statement
-
-      @logger.info '* if_to_cond'
-      if_to_cond
-
-      @logger.info '* optimize_if_return'
-      optimize_if_return
-
-      @logger.info '* compress_var'
-      compress_var(@prog, :longer => true)
-      compress_var
-
-      @logger.info '* reduce_exp'
-      reduce_exp
-
-      grouping_statement
-      block_to_statement
-      if_to_cond
-
-      #feature
-      optimize_if_return2
-
-      @logger.info '* remove_paren'
-      remove_paren
 
       @heading_comments.reverse.each do |c|
         @prog.source_elements.source_elements.unshift(c)
@@ -517,7 +494,12 @@ module Minjs
       self
     end
 
-    def compress_var(node = @prog, options = {})
+    def compress_var(node = @prog)
+      compress_var_sub(@prog, :longer => true)
+      compress_var_sub
+    end
+
+    def compress_var_sub(node = @prog, options = {})
       if options[:longer]
         var_sym = :aaaaaaaaaa
       end
@@ -558,8 +540,11 @@ module Minjs
           if st.kind_of? ECMA262::StTry
             vars[st.catch[0].val.to_sym] = 1
           end
+          if st.kind_of? ECMA262::StFunc
+            func_name = st.name
+          end
           _st.traverse(_parent) {|st2|
-            if st2.kind_of? ECMA262::IdentifierName
+            if st2.kind_of? ECMA262::IdentifierName and !st2.eql?(func_name)
               vars[st2.val.to_sym] ||= 0
               vars[st2.val.to_sym] += 1
             end
@@ -884,7 +869,8 @@ if $0 == __FILE__
   options = {}
   argv.each do |x|
     if x.match(/^--?/)
-      options[$'.to_sym] = true
+      opt = $'.gsub(/-/, '_').to_sym
+      options[opt] = true
     else
       f.push(open(x.to_s).read())
     end
