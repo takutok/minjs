@@ -58,7 +58,7 @@ module Minjs
       end
 
       algo = [
-        #:reorder_function_decl,
+        :reorder_function_decl,
         :simple_replacement,
         :reorder_var,
         :assignment_after_var,
@@ -175,14 +175,18 @@ module Minjs
     end
 
     def reorder_function_decl(node = @prog)
+      flist = []
       node.traverse(nil) {|st, parent|
         if st.kind_of? ECMA262::StFunc and parent.kind_of? ECMA262::StatementList and st.decl?
           if parent.index(st)
-            parent.remove(st)
-            parent.source_elements.unshift(st)
+            flist.push([st, parent])
           end
         end
       }
+      flist.each do |st, parent|
+        parent.remove(st)
+        parent.statement_list.unshift(st)
+      end
       self
     end
 
@@ -238,6 +242,7 @@ module Minjs
 
             idx = 0
             elems.each do |e|
+              next if e.kind_of? ECMA262::StFunc and e.decl?
               found = false
               e.traverse(nil){|ee, pp|
                 if ee.kind_of? ECMA262::IdentifierName and var_vars[ee.val.to_sym]
@@ -259,35 +264,6 @@ module Minjs
         end
         self
       }
-=begin
-            st.traverse(parent) {|st2, parent2|
-              #
-              #if var statment has initializer,
-              #
-              #
-              if st2.kind_of? ECMA262::StVar and st2.context.var_env == @context.var_env
-                st2.instance_eval{
-                  blk = []
-                  @vars.each do |vl|
-                    if vl[1]
-                      blk.push(ECMA262::StExp.new(ECMA262::ExpAssign.new(vl[0], vl[1])))
-                    else
-                    end
-                  end
-                  parent2.replace(st2, ECMA262::StBlock.new(ECMA262::StatementList.new(blk)))
-                }
-              elsif st2.kind_of? ECMA262::StForVar and st2.context.var_env == @context.var_env
-                parent2.replace(st2, st2.to_st_for)
-              elsif st2.kind_of? ECMA262::StForInVar and st2.context.var_env == @context.var_env
-                parent2.replace(st2, st2.to_st_for_in)
-              end
-            }
-
-          }
-        end
-      }
-      remove_block_in_block
-=end
       self
     end
 
