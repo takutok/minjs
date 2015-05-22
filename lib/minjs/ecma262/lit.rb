@@ -633,9 +633,14 @@ module Minjs
         val.to_s
       end
 
-      def binding_env
+      def binding_env(type = :var)
         return nil if context.nil?
-        v = context.var_env
+        if type == :var
+          v = context.var_env
+        else
+          v = context.lex_env
+        end
+
         while v
           if v.record.binding[val]
             return v

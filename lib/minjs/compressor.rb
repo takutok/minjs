@@ -58,7 +58,7 @@ module Minjs
       end
 
       algo = [
-        :reorder_function_decl,
+        #:reorder_function_decl,
         :simple_replacement,
         :reorder_var,
         :assignment_after_var,
@@ -530,6 +530,7 @@ module Minjs
           #
           all_vars = {}
           var_vars = {}
+          var_vars_list = []
           outer_vars = {}
           nesting_vars = {}
           nesting_vars_list = []
@@ -562,6 +563,7 @@ module Minjs
               elsif st2_env == st.context.var_env
                 var_vars[var_name] ||= 0
                 var_vars[var_name] += 1
+                var_vars_list.push(st2)
               else
                 e = st2.binding_env
                 while e
@@ -569,7 +571,7 @@ module Minjs
                   if e == st.context.var_env
                     nesting_vars[var_name] ||= 0
                     nesting_vars[var_name] += 1
-                    nesting_vars_list.push(st)
+                    nesting_vars_list.push(st2)
                     break
                   end
                   if e.nil?
@@ -611,46 +613,81 @@ module Minjs
             if name.nil?
               next #bug?
             end
-            while(outer_vars[var_sym])
+            while outer_vars[var_sym] or var_vars[var_sym]
               var_sym = next_sym(var_sym)
             end
+#=begin
+            #feature
+            #rename nesting_vars
+            if nesting_vars[var_sym]
+              nesting_vars_list.each do |x|
+                raise 'error' if x.binding_env(:var).nil?
+                raise 'error' if x.binding_env(:lex).nil?
+              end
+
+              var_sym2 = "abc#{var_sym.to_s}".to_sym
+              while all_vars[var_sym2]
+                var_sym2 = next_sym(var_sym2)
+              end
+              rl = {}
+              nesting_vars_list.each do |x|
+                if x.val.to_sym == var_sym
+                  _var_env = x.binding_env(:var)
+                  _lex_env = x.binding_env(:lex)
+                  rl[_var_env] = true
+                  rl[_lex_env] = true
+                end
+              end
+              rl.keys.each do |_env|
+                if _env && _env.record.binding[var_sym]
+                  _env.record.binding[var_sym2] = _env.record.binding[var_sym]
+                  _env.record.binding.delete var_sym
+                end
+              end
+
+              nesting_vars_list.each do |x|
+                if x.val.to_sym == var_sym
+                  x.instance_eval{
+                    @val = var_sym2
+                  }
+                end
+                raise 'error' if x.binding_env(:var).nil?
+                raise 'error' if x.binding_env(:lex).nil?
+              end
+            end
+#=end
             rename_table[name] = var_sym
             var_sym = next_sym(var_sym)
           }
-#          STDERR.puts "rename_table"
-#          STDERR.puts rename_table
-          rename_vars = []
-          _st.traverse(_parent) {|st2|
-            #
-            # rename `name' to `var_sym'
-            #
-            if st2.kind_of? ECMA262::IdentifierName and rename_table[st2.val.to_sym]
-              st2_env = st2.binding_env
-              if st2_env == nil
-                ;
-              elsif st2_env == @global_context.var_env
-                ;
-              elsif st2_env == st.context.var_env
-                rename_vars.push(st2)
-              end
-            end
+          #STDERR.puts "rename_table"
+          #STDERR.puts rename_table
+          var_vars_list.each {|st2|
+            raise 'error' if st2.binding_env(:var).nil?
+            raise 'error' if st2.binding_env(:lex).nil?
           }
-          rename_vars.each do |st2|
-            st2.instance_eval{
-              @val = rename_table[@val]
-            }
-          end
 
           rename_table.each do |name, new_name|
-            if st.context.var_env.record.binding[name]
-              st.context.var_env.record.binding[new_name] = st.context.var_env.record.binding[name]
-              st.context.var_env.record.binding.delete(name)
-            end
-            if st.context.lex_env.record.binding[name]
-              st.context.lex_env.record.binding[new_name] = st.context.lex_env.record.binding[name]
-              st.context.lex_env.record.binding.delete(name)
+            if name != new_name
+              if st.context.var_env.record.binding[name]
+                st.context.var_env.record.binding[new_name] = st.context.var_env.record.binding[name]
+                st.context.var_env.record.binding.delete(name)
+              end
+              if st.context.lex_env.record.binding[name]
+                st.context.lex_env.record.binding[new_name] = st.context.lex_env.record.binding[name]
+                st.context.lex_env.record.binding.delete(name)
+              end
             end
           end
+
+          var_vars_list.each {|st2|
+            #p st2.to_js
+            st2.instance_eval{
+              #p rename_table[@val]
+              @val = rename_table[@val]
+            }
+            raise 'error' if st2.binding_env(:var).nil?
+            raise 'error' if st2.binding_env(:lex).nil?
+          }
         end
       }
       self
@@ -701,6 +738,12 @@ module Minjs
           else
             parent.replace(st, ECMA262::StEmpty.new)
           end
+        #
+        # new A() => (new A)
+        #
+        elsif st.kind_of? ECMA262::ExpNew and st.args and st.args.length == 0
+          st.replace(st.args, nil)
+          parent.add_paren.remove_paren
         end
       }
       self

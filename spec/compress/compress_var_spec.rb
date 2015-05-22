@@ -9,8 +9,8 @@ describe 'Compression' do
 function xxxx()
 {
     var aaaa, bbbb;// => a,b
-    function yyyy(){//=>c
-	var cccc, dddd, a, b; // => a,b,d,e
+    function yyyy(){//=>d
+	var cccc, dddd, a, b; // => a,b,c,e
     }
     function wwww(c, d){//=>d(a,b)
 	var cccc, dddd, a, b; // => c,d,e,f
@@ -28,7 +28,7 @@ function xxxx()
 EOS
       js = c.compress_var.to_js
 
-      expect(js).to eq "function xxxx(){var a,b;function c(){var a,b,c,d}function d(a,b){var c,d,e,f}function e(a,b){var c,d}function f(c,d){a,b;function e(){}a:while(true);}}"
+      expect(js).to eq "function xxxx(){var a,b;function d(){var a,b,c,e}function c(a,b){var d,e,f,g}function e(a,b){var c,d}function f(c,d){a,b;function e(){}a:while(true);}}"
     end
     it 'compress try-catch var name' do
       c = test_compressor
@@ -61,7 +61,7 @@ function x()
 }
 EOS
       js = c.compress_var.to_js
-      expect(js).to eq "function x(){var b;function a(a,b,c){var d}}"
+      expect(js).to eq "function x(){var c;function d(a,c,e){var f}}"
     end
 
     it 'compress var name' do
@@ -76,7 +76,7 @@ function zz()
 }
 EOS
       js = c.compress_var.to_js
-      expect(js).to eq "function zz(){var a=function a(){console.log(a)};console.log(b)}"
+      expect(js).to eq "function zz(){var c=function a(){console.log(a)};console.log(b)}"
     end
   end
 end
