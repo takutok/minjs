@@ -43,6 +43,9 @@ module Minjs
               if js.match(/;\z/) and !options[:for_args]
                 nl = "\n"
               end
+              if js.match(/}\z/) and !options[:for_args]
+                nl = "\n"
+              end
             end
           end
           js = "#{sep}#{js}#{nl}";

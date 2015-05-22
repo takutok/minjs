@@ -91,7 +91,6 @@ module Minjs
     def parse(data)
       @lex = Minjs::Lex.new(data, :logger => @logger)
       @global_context = ECMA262::Context.new
-
       @heading_comments = []
       @lex.eval_lit{
         while a = @lex.ws_lit
@@ -495,83 +494,99 @@ module Minjs
     end
 
     def compress_var(node = @prog)
-      compress_var_sub(@prog, :longer => true)
+      #compress_var_sub(@prog, :longer => true)
       compress_var_sub
     end
 
     def compress_var_sub(node = @prog, options = {})
-      if options[:longer]
-        var_sym = :aaaaaaaaaa
-      end
-
       #
       #traverse all statemtns and expression
       #
       scopes = []
       node.traverse(nil) {|st, parent|
-        if st.kind_of? ECMA262::StTry and st.catch
-          _context = st.catch_context
-          _parent = st
-          _st = st.catch[1]
-        elsif st.kind_of? ECMA262::StFunc
+#        if st.kind_of? ECMA262::StTry and st.catch and false
+#          _context = st.catch_context
+#          _parent = st
+#          _st = st.catch[1]
+#          scopes.push([st, parent, _parent, _context, _st])
+#        elsif st.kind_of? ECMA262::StFunc
+        if st.kind_of? ECMA262::StFunc
           _context = st.context
           _parent = parent
           _st = st
-        else
-          _parent = nil
-          _context = nil
-          _st = nil
-        end
-        if _parent and _context and _st
           scopes.push([st, parent, _parent, _context, _st])
         end
       }
-      #node.traverse(nil) {|st, parent|
-      scopes.reverse.each {|st, parent, _parent, _context, _st|
+      scopes.reverse!
+      scopes.each {|st, parent, _parent, _context, _st|
         #p "*#{st.name.to_js}"
-        if !options[:longer]
-          var_sym = :a
-        end
+#        if !options[:longer]
+        var_sym = :a
+#        end
         if _parent and _context and _st
           #
           # collect and counting all variables under this function/catch
+          # collect and counting all var-variables under this function/catch
           #
-          vars = {}
-          if st.kind_of? ECMA262::StTry
-            vars[st.catch[0].val.to_sym] = 1
-          end
-          if st.kind_of? ECMA262::StFunc
-            func_name = st.name
-          end
+          all_vars = {}
+          var_vars = {}
+          outer_vars = {}
+          nesting_vars = {}
+          nesting_vars_list = []
+
+#          if _st.kind_of? ECMA262::StFunc and _st.name
+#            STDERR.puts "function #{_st.name.to_js}:"
+#          else
+#            STDERR.puts "function"
+#          end
           _st.traverse(_parent) {|st2|
-            if st2.kind_of? ECMA262::IdentifierName and !st2.eql?(func_name)
-              vars[st2.val.to_sym] ||= 0
-              vars[st2.val.to_sym] += 1
+            #
+            # 1. 関数とスコープが同じもの(var_vars)
+            #    名前の変更ができる。ただし outer_varsの名前にはできない
+            # 2. 関数より上位のスコープ(outer_vars)
+            #    名前の変更ができない
+            # 3. 関数とスコープが違う。より下位のもの(nesting_vars)
+            #    名前の変更ができない
+            #
+            if st2.kind_of? ECMA262::IdentifierName
+              var_name = st2.val.to_sym
+              st2_env = st2.binding_env
+              all_vars[var_name] ||= 0
+              all_vars[var_name] += 1
+              if st2_env == nil #global
+                outer_vars[var_name] ||= 0
+                outer_vars[var_name] += 1
+              elsif st2_env == @global_context.var_env #global
+                outer_vars[var_name] ||= 0
+                outer_vars[var_name] += 1
+              elsif st2_env == st.context.var_env
+                var_vars[var_name] ||= 0
+                var_vars[var_name] += 1
+              else
+                e = st2.binding_env
+                while e
+                  e = e.outer
+                  if e == st.context.var_env
+                    nesting_vars[var_name] ||= 0
+                    nesting_vars[var_name] += 1
+                    nesting_vars_list.push(st)
+                    break
+                  end
+                  if e.nil?
+                    outer_vars[var_name] ||= 0
+                    outer_vars[var_name] += 1
+                    break
+                  end
+                end
+              end
             end
           }
-          #
-          # collect all var variables under this function
-          #
-          var_vars = {}
-          if st.kind_of? ECMA262::StFunc
-            _context.var_env.record.binding.each do|k, v|
-              var_vars[k] = (vars[k] || 1)
-            end
-          end
-          #
-          # collect all lexical variables under this catch clause
-          #
-          # currently, only catch's args is lex_var
-          #
-          lex_vars = {}
-          if st.kind_of? ECMA262::StTry
-            _context.lex_env.record.binding.each do|k, v|
-              lex_vars[k] = (vars[k] || 1)
-            end
-          end
-          #
-          # check `eval' function is exist under this function/catch
-          #
+#          STDERR.puts "outer"
+#          STDERR.puts outer_vars
+#          STDERR.puts "var"
+#          STDERR.puts var_vars
+#          STDERR.puts "nesting"
+#          STDERR.puts nesting_vars
           unless var_vars[:eval]
             eval_flag = false
             _st.traverse(_parent) {|st2|
@@ -587,97 +602,55 @@ module Minjs
           #
           # sort var_vars
           #
-          var_vars = var_vars.sort {|(k1,v1), (k2,v2)| v2 <=> v1}
-          #p var_vars
+          var_vars_array = var_vars.sort {|(k1,v1), (k2,v2)| v2 <=> v1}
           #
-          # check var_vars
+          # create rename table
           #
-          var_vars.each {|name, count|
+          rename_table = {}
+          var_vars_array.each {|name, count|
             if name.nil?
-              next
+              next #bug?
             end
-            while(vars[var_sym])
+            while(outer_vars[var_sym])
               var_sym = next_sym(var_sym)
             end
-            if (!options[:longer] && name.to_s.bytesize >= var_sym.to_s.bytesize) or
-              (options[:longer] && name.to_s.bytesize <= var_sym.to_s.bytesize)
-              #
-              # rename `name' to `var_sym'
-              #
-              func_name = nil
-              if _st.kind_of? ECMA262::StFunc and _st.decl?
-                func_name = _st.name
-              end
-              _st.traverse(_parent){|st2|
-                if st2.kind_of? ECMA262::IdentifierName and st2.context.nil?
-                  ;# this
-                elsif st2.kind_of? ECMA262::IdentifierName and st2.context.var_env.outer == nil # global scope
-                  ;
-                elsif st2.kind_of? ECMA262::IdentifierName and st2.val == name
-                  # scope of function's name is outer
-                  if st2.eql?(func_name)
-                  else
-                    st2.instance_eval{
-                      @val = var_sym
-                    }
-                  end
-                elsif st2.kind_of? ECMA262::StFunc
-                  if st2.context.var_env.record.binding[name]
-                    st2.context.var_env.record.binding[var_sym] = st2.context.var_env.record.binding[name]
-                    st2.context.var_env.record.binding.delete(name)
-                  end
-                elsif st2.kind_of? ECMA262::StTry
-                  if st2.catch_context.lex_env.record.binding[name]
-                    st2.catch_context.lex_env.record.binding[var_sym] = st2.catch_context.lex_env.record.binding[name]
-                    st2.catch_context.lex_env.record.binding.delete(name)
-                  end
-                end
-              }
-            end
+            rename_table[name] = var_sym
             var_sym = next_sym(var_sym)
           }
-          lex_vars.each {|name, count|
-            if name.nil?
-              next
-            end
-            while(vars[var_sym])
-              var_sym = next_sym(var_sym)
-            end
-            if name.to_s.bytesize > var_sym.to_s.bytesize
-              #
-              # rename `name' to `var_sym'
-              #
-              _st.traverse(_parent){|st2|
-                if st2.kind_of? ECMA262::IdentifierName and st2.context.nil?
-                  ;# TODO, currently special identifier such as 'this' has no context
-                elsif st2.kind_of? ECMA262::IdentifierName and st2.context.lex_env.outer == nil # global scope
-                  ;
-                elsif st2.kind_of? ECMA262::IdentifierName and st2.val == name
-                  st2.instance_eval{
-                    @val = var_sym
-                  }
-                end
-              }
-              if st.kind_of? ECMA262::StTry
-                if st.catch[0].kind_of? ECMA262::IdentifierName
-                  st.catch[0].instance_eval{
-                    @val = var_sym
-                  }
-                elsif st2.kind_of? ECMA262::StFunc
-                  if st2.context.var_env.record.binding[name]
-                    st2.context.var_env.record.binding[var_sym] = st2.context.var_env.record.binding[name]
-                    st2.context.var_env.record.binding.delete(name)
-                  end
-                elsif st2.kind_of? ECMA262::StTry
-                  if st2.catch_context.lex_env.record.binding[name]
-                    st2.catch_context.lex_env.record.binding[var_sym] = st2.catch_context.lex_env.record.binding[name]
-                    st2.catch_context.lex_env.record.binding.delete(name)
-                  end
-                end
+#          STDERR.puts "rename_table"
+#          STDERR.puts rename_table
+          rename_vars = []
+          _st.traverse(_parent) {|st2|
+            #
+            # rename `name' to `var_sym'
+            #
+            if st2.kind_of? ECMA262::IdentifierName and rename_table[st2.val.to_sym]
+              st2_env = st2.binding_env
+              if st2_env == nil
+                ;
+              elsif st2_env == @global_context.var_env
+                ;
+              elsif st2_env == st.context.var_env
+                rename_vars.push(st2)
               end
             end
-            var_sym = next_sym(var_sym)
           }
+          rename_vars.each do |st2|
+            st2.instance_eval{
+              @val = rename_table[@val]
+            }
+          end
+
+          rename_table.each do |name, new_name|
+            if st.context.var_env.record.binding[name]
+              st.context.var_env.record.binding[new_name] = st.context.var_env.record.binding[name]
+              st.context.var_env.record.binding.delete(name)
+            end
+            if st.context.lex_env.record.binding[name]
+              st.context.lex_env.record.binding[new_name] = st.context.lex_env.record.binding[name]
+              st.context.lex_env.record.binding.delete(name)
+            end
+          end
         end
       }
       self

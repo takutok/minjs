@@ -28,7 +28,7 @@ function xxxx()
 EOS
       js = c.compress_var.to_js
 
-      expect(js).to eq "function xxxx(){var a,b;function c(){var a,b,d,e}function d(a,b){var c,e,f,g}function e(a,b){var c,d}function f(c,d){a,b;function e(){}a:while(true);}}"
+      expect(js).to eq "function xxxx(){var a,b;function c(){var a,b,c,d}function d(a,b){var c,d,e,f}function e(a,b){var c,d}function f(c,d){a,b;function e(){}a:while(true);}}"
     end
     it 'compress try-catch var name' do
       c = test_compressor
@@ -61,7 +61,7 @@ function x()
 }
 EOS
       js = c.compress_var.to_js
-      expect(js).to eq "function x(){var b;function a(e,d,c){var b}}"
+      expect(js).to eq "function x(){var b;function a(a,b,c){var d}}"
     end
 
     it 'compress var name' do

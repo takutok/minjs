@@ -458,7 +458,8 @@ module Minjs
       end
 
       def to_js(options = {})
-        if @args and @args.length > 0
+        #TODO => simple_replacement
+        if @args# and @args.length > 0
           args = @args.collect{|x| x.to_js(options)}.join(",")
           concat options, :new, @name, '(', args, ')'
         else
