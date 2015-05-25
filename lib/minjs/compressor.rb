@@ -58,7 +58,7 @@ module Minjs
       end
 
       algo = [
-        #:reorder_function_decl,
+        :reorder_function_decl,
         :simple_replacement,
         :reorder_var,
         :assignment_after_var,
@@ -239,12 +239,16 @@ module Minjs
             idx = 0
             elems.each do |e|
               found = false
-              e.traverse(nil){|ee, pp|
-                if ee.kind_of? ECMA262::IdentifierName and var_vars[ee.val.to_sym]
-                  found = true
-                  break
-                end
-              }
+              if e.kind_of? ECMA262::StFunc and e.decl?
+                ;
+              else
+                e.traverse(nil){|ee, pp|
+                  if ee.kind_of? ECMA262::IdentifierName and var_vars[ee.val.to_sym]
+                    found = true
+                    break
+                  end
+                }
+              end
               break if found
               idx += 1
             end
