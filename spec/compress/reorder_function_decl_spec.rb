@@ -13,7 +13,7 @@ var b=function (){} // => is expression.
 function dd(){} // => is declaration, move to top too.
 EOS
       js = c.reorder_function_decl.to_js
-      expect(js).to eq "function dd(){}function cc(){}foo;var a=function aa(){};var b=function(){};"
+      expect(js).to eq "function cc(){}function dd(){}foo;var a=function aa(){};var b=function(){};"
     end
   end
 end

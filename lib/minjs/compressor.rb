@@ -183,7 +183,7 @@ module Minjs
           end
         end
       }
-      flist.each do |st, parent|
+      flist.reverse.each do |st, parent|
         parent.remove(st)
         parent.statement_list.unshift(st)
       end
@@ -484,12 +484,6 @@ module Minjs
       #
       scopes = []
       node.traverse(nil) {|st, parent|
-#        if st.kind_of? ECMA262::StTry and st.catch and false
-#          _context = st.catch_context
-#          _parent = st
-#          _st = st.catch[1]
-#          scopes.push([st, parent, _parent, _context, _st])
-#        elsif st.kind_of? ECMA262::StFunc
         if st.kind_of? ECMA262::StFunc
           _context = st.context
           _parent = parent
@@ -499,10 +493,7 @@ module Minjs
       }
       scopes.reverse!
       scopes.each {|st, parent, _parent, _context, _st|
-        #p "*#{st.name.to_js}"
-#        if !options[:longer]
         var_sym = :a
-#        end
         if _parent and _context and _st
           #
           # collect and counting all variables under this function/catch
@@ -515,19 +506,25 @@ module Minjs
           nesting_vars = {}
           nesting_vars_list = []
 
-#          if _st.kind_of? ECMA262::StFunc and _st.name
-#            STDERR.puts "function #{_st.name.to_js}:"
-#          else
-#            STDERR.puts "function"
-#          end
           _st.traverse(_parent) {|st2|
             #
-            # 1. 関数とスコープが同じもの(var_vars)
-            #    名前の変更ができる。ただし outer_varsの名前にはできない
-            # 2. 関数より上位のスコープ(outer_vars)
-            #    名前の変更ができない
-            # 3. 関数とスコープが違う。より下位のもの(nesting_vars)
-            #    名前の変更ができない
+            # In this function,
+            #
+            # 1. outer_vars:
+            #    Variables which locate out of this function(or global variable)
+            #    Them name cannot be renamed
+            # 2. nesting_vars:
+            #    Variables which locate in the function of this function.
+            #    Them name cannot be renamed
+            # 3. var_vars:
+            #    Variables which have same scope in this function.
+            #    Them name can be renamed under the following conditions
+            #
+            #   a. If the new name is not used, the name can be renamed to it.
+            #   b. If the new name belongs to var_vars, the name cannot be renamed.
+            #   c. If the new name belongs to outer_vars the name cannot be renamed.
+            #   d. If the new name belongs to nesting_vars, the name can be rename
+            #      to it after rename nesting_vars's name to another name.
             #
             if st2.kind_of? ECMA262::IdentifierName
               var_name = st2.val.to_sym
@@ -563,12 +560,6 @@ module Minjs
               end
             end
           }
-#          STDERR.puts "outer"
-#          STDERR.puts outer_vars
-#          STDERR.puts "var"
-#          STDERR.puts var_vars
-#          STDERR.puts "nesting"
-#          STDERR.puts nesting_vars
           unless var_vars[:eval]
             eval_flag = false
             _st.traverse(_parent) {|st2|
@@ -586,7 +577,7 @@ module Minjs
           #
           var_vars_array = var_vars.sort {|(k1,v1), (k2,v2)| v2 <=> v1}
           #
-          # create rename table
+          # create renaming table
           #
           rename_table = {}
           var_vars_array.each {|name, count|
@@ -596,8 +587,6 @@ module Minjs
             while outer_vars[var_sym] or var_vars[var_sym]
               var_sym = next_sym(var_sym)
             end
-#=begin
-            #feature
             #rename nesting_vars
             if nesting_vars[var_sym]
               nesting_vars_list.each do |x|
@@ -635,12 +624,9 @@ module Minjs
                 raise 'error' if x.binding_env(:lex).nil?
               end
             end
-#=end
             rename_table[name] = var_sym
             var_sym = next_sym(var_sym)
           }
-          #STDERR.puts "rename_table"
-          #STDERR.puts rename_table
           var_vars_list.each {|st2|
             raise 'error' if st2.binding_env(:var).nil?
             raise 'error' if st2.binding_env(:lex).nil?
@@ -660,9 +646,7 @@ module Minjs
           end
 
           var_vars_list.each {|st2|
-            #p st2.to_js
             st2.instance_eval{
-              #p rename_table[@val]
               @val = rename_table[@val]
             }
             raise 'error' if st2.binding_env(:var).nil?
