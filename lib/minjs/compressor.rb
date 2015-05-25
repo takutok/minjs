@@ -244,12 +244,16 @@ module Minjs
             elems.each do |e|
               next if e.kind_of? ECMA262::StFunc and e.decl?
               found = false
-              e.traverse(nil){|ee, pp|
-                if ee.kind_of? ECMA262::IdentifierName and var_vars[ee.val.to_sym]
-                  found = true
-                  break
-                end
-              }
+              if e.kind_of? ECMA262::StFunc and e.decl?
+                ;
+              else
+                e.traverse(nil){|ee, pp|
+                  if ee.kind_of? ECMA262::IdentifierName and var_vars[ee.val.to_sym]
+                    found = true
+                    break
+                  end
+                }
+              end
               break if found
               idx += 1
             end
